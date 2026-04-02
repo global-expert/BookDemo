@@ -119,3 +119,100 @@ def test_register_returns_503_when_smtp_not_configured_and_rolls_back_user() -> 
         settings.smtp_suppress_send = original_suppress
         settings.smtp_host = original_host
         settings.smtp_from_address = original_from
+
+
+def test_login_returns_access_token_for_verified_user() -> None:
+    from tests.conftest import get_test_client, get_user_otp
+
+    client: TestClient = get_test_client()
+    payload = {
+        "full_name": "Mariam Noor",
+        "email": "mariam@example.com",
+        "password": "Secret123!",
+        "confirm_password": "Secret123!"
+    }
+
+    client.post("/api/v1/auth/register", json=payload)
+    otp_code = get_user_otp("mariam@example.com")
+    client.post("/api/v1/auth/verify-otp", json={"email": "mariam@example.com", "otp_code": otp_code})
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "mariam@example.com", "password": "Secret123!"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert isinstance(body["access_token"], str)
+    assert len(body["access_token"]) > 20
+
+
+def test_login_requires_verified_account() -> None:
+    from tests.conftest import get_test_client
+
+    client: TestClient = get_test_client()
+    payload = {
+        "full_name": "Mariam Noor",
+        "email": "mariam@example.com",
+        "password": "Secret123!",
+        "confirm_password": "Secret123!"
+    }
+
+    client.post("/api/v1/auth/register", json=payload)
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "mariam@example.com", "password": "Secret123!"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Account must be verified first"
+
+
+def test_profile_me_returns_user_and_company_information() -> None:
+    from tests.conftest import get_test_client, get_user_otp
+
+    client: TestClient = get_test_client()
+    payload = {
+        "full_name": "Mariam Noor",
+        "email": "mariam@example.com",
+        "password": "Secret123!",
+        "confirm_password": "Secret123!"
+    }
+
+    client.post("/api/v1/auth/register", json=payload)
+    otp_code = get_user_otp("mariam@example.com")
+    client.post("/api/v1/auth/verify-otp", json={"email": "mariam@example.com", "otp_code": otp_code})
+
+    client.post(
+        "/api/v1/company/setup",
+        json={
+            "email": "mariam@example.com",
+            "company_type": "LLC",
+            "vat_number": "100256789900003",
+            "trn": "123456789000003",
+            "industry": "Technology",
+            "address": "Dubai Media City",
+            "phone_number": "+971501234567",
+        },
+    )
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "mariam@example.com", "password": "Secret123!"},
+    )
+    token = login_response.json()["access_token"]
+
+    profile_response = client.get(
+        "/api/v1/auth/profile/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert profile_response.status_code == 200
+    body = profile_response.json()
+    assert body["email"] == "mariam@example.com"
+    assert body["full_name"] == "Mariam Noor"
+    assert body["is_verified"] is True
+    assert body["company_profile"] is not None
+    assert body["company_profile"]["industry"] == "Technology"

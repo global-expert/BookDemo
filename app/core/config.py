@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     smtp_from_name: str = "UAE E-Invoicing"
     smtp_use_tls: bool = True
     smtp_suppress_send: bool = False
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

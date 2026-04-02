@@ -25,6 +25,16 @@ class VerifyOtpRequest(BaseModel):
     otp_code: str
 
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+
 class MessageResponse(BaseModel):
     message: str
 
@@ -36,3 +46,23 @@ class UserOut(BaseModel):
     full_name: str
     email: EmailStr
     is_verified: bool
+
+
+class CompanyProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company_type: str
+    vat_number: str
+    trn: str
+    industry: str
+    address: str
+    phone_number: str
+
+
+class ProfileMeResponse(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    is_verified: bool
+    company_profile: CompanyProfileOut | None

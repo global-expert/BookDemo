@@ -4,14 +4,39 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import db_session
+from app.api.deps import db_session, get_current_user
+from app.models.company_profile import CompanyProfile
 from app.models.user import User
-from app.schemas.auth import MessageResponse, RegisterRequest, RegisterResponse, VerifyOtpRequest
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    MessageResponse,
+    ProfileMeResponse,
+    RegisterRequest,
+    RegisterResponse,
+    VerifyOtpRequest,
+)
 from app.services.email_sender import EmailConfigurationError, EmailDeliveryError, send_otp_email
 from app.services.otp import generate_otp_code, otp_expiry
-from app.services.security import get_password_hash
+from app.services.security import create_access_token, get_password_hash, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _authenticate_and_issue_token(email: str, password: str, db: Session) -> LoginResponse:
+    user = db.scalar(select(User).where(User.email == email.lower()))
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account must be verified first")
+
+    token = create_access_token(subject=user.email)
+    return LoginResponse(access_token=token, token_type="bearer")
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -57,7 +82,6 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(db_session)) -> 
     if user.otp_expires_at:
         expires_at = user.otp_expires_at
         if expires_at.tzinfo is None or expires_at.tzinfo.utcoffset(expires_at) is None:
-            # SQLite returns naive datetime, treat as UTC
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if expires_at < datetime.now(timezone.utc):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP code expired")
@@ -69,3 +93,23 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(db_session)) -> 
     db.commit()
 
     return MessageResponse(message="OTP verified successfully")
+
+
+@router.post("/login", response_model=LoginResponse)
+def login(payload: LoginRequest, db: Session = Depends(db_session)) -> LoginResponse:
+    return _authenticate_and_issue_token(payload.email, payload.password, db)
+
+
+@router.get("/profile/me", response_model=ProfileMeResponse)
+def profile_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+) -> ProfileMeResponse:
+    company_profile = db.scalar(select(CompanyProfile).where(CompanyProfile.user_id == current_user.id))
+    return ProfileMeResponse(
+        id=current_user.id,
+        full_name=current_user.full_name,
+        email=current_user.email,
+        is_verified=current_user.is_verified,
+        company_profile=company_profile,
+    )
