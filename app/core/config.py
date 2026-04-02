@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     smtp_from_name: str = "UAE E-Invoicing"
     smtp_use_tls: bool = True
     smtp_suppress_send: bool = False
+    cors_allowed_origins: str = "*"
+    cors_allow_credentials: bool = True
+    cors_allowed_methods: str = "*"
+    cors_allowed_headers: str = "*"
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
@@ -41,6 +45,18 @@ class Settings(BaseSettings):
         database = quote(parts.get("database", "postgres"), safe="")
 
         return f"postgresql+psycopg://{username}:{password}@{host}:{port}/{database}"
+
+    @property
+    def resolved_cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def resolved_cors_methods(self) -> list[str]:
+        return [method.strip() for method in self.cors_allowed_methods.split(",") if method.strip()]
+
+    @property
+    def resolved_cors_headers(self) -> list[str]:
+        return [header.strip() for header in self.cors_allowed_headers.split(",") if header.strip()]
 
 
 settings = Settings()
